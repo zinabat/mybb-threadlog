@@ -296,22 +296,45 @@ function threadlog_handle_authorswitch()
 // delete the threadlog entry if there are no more posts from the user
 $plugins->add_hook('class_moderation_delete_post_start', 'threadlog_delete_post');
 function threadlog_delete_post(&$pid) {
-    global $db;
-    $pid = $db->escape_string($pid);
-    // get the post
-    $query = $db->simple_select('posts', 'uid, tid', 'pid='.$pid);
-    $post = $db->fetch_array($query);
-    $db->free_result($query);
-    // get the thread participants
-    $query = $db->write_query("SELECT distinct uid from `{$db->table_prefix}posts`
-        WHERE tid={$post['tid']} AND pid !={$pid}");
-    while ($row = $db->fetch_array($query)) {
-        // if the participant still has posts in the thread, do nothing
-        if ($row['uid'] === $post['uid']) return;
+    $threadlog = new Threadlog();
+    $pid = (int) $pid;
+    $threadlog->delete_if_only_post($pid);
+}
+$plugins->add_hook('usercp_do_drafts_start', 'threadlog_delete_drafts');
+function threadlog_delete_drafts() {
+    global $mybb, $db;
+    $pids = [];
+    $tids = [];
+    foreach ($mybb->input['deletedraft'] as $id => $val) {
+		if ($val == "post") {
+			$pids[] = "'".(int)$id."'";
+		} elseif ($val == "thread") {
+			$tids[] = "'".(int)$id."'";
+		}
+	}
+    // delete any draft threadlogentries
+    if (!empty($tids)) {
+        $db->delete_query('threadlogentry', 'tid in ('.implode(',', $tids).')');
     }
-    //echo 'deleting threadlogentry';
-    $db->delete_query('threadlogentry', "tid={$post['tid']} AND uid={$post['uid']}");
-    //echo 'done';
+    // figure out if any of the pids we're deleting are the only post by this user in the threads
+    if (!empty($pids)) {
+        // first get all of the associated tids
+        $pidstring = implode(',', $pids);
+        // delete the threadlog entries if the pids we're deleting are the only posts in the thread by this user
+        $query = $db->write_query("SELECT t.tid
+            from `{$db->table_prefix}threads` t
+            left join `{$db->table_prefix}posts` p on p.tid=t.tid and p.uid=3 and pid not in ({$pidstring})
+            WHERE t.tid in
+                (SELECT tid from `{$db->table_prefix}posts` where pid in ({$pidstring}))
+            and p.uid is null");
+        $tids = []; // reset
+        while ($tid = $db->fetch_field($query, 'tid')) {
+            $tids[] = $tid;
+        }
+        if (!empty($tids)) {
+            $db->delete_query('threadlogentry', 'tid in ('.implode(',', $tids).') and uid='.(int) $mybb->user['uid']);
+        }
+    }
 }
 
 // delete the threadlog entry for all users
@@ -366,6 +389,7 @@ function get_thread_participants($uid, $tids) {
 $plugins->add_hook('misc_start', 'threadlog');
 function threadlog() {
     global $mybb, $templates, $db, $theme, $lang, $header, $headerinclude, $footer, $uid, $tid;
+    global $plugins, $plugin_templates;
 
     // show the threadlog when we call it
     if ($mybb->request_method !== 'get' || $mybb->get_input('action') !== 'threadlog') {
@@ -402,7 +426,7 @@ function threadlog() {
         from `{$db->table_prefix}threadlogentry` as e
         left join `{$db->table_prefix}threads` as t on t.tid=e.tid
         left join `{$db->table_prefix}forums` as f on f.fid=t.fid
-        where e.uid={$uid} and f.threadlog_include=1 and t.visible");
+        where e.uid={$uid} and f.threadlog_include=1 and t.visible=1");
 
     $counts = $db->fetch_array($query);
     $count_total = $counts['total'];
@@ -432,7 +456,7 @@ function threadlog() {
         left join `{$db->table_prefix}users` as u on u.uid=t.lastposteruid
         left join `{$db->table_prefix}threadprefixes` as p on p.pid = t.prefix
         left join `{$db->table_prefix}forums` as f on f.fid=t.fid
-        where e.uid={$uid} and f.threadlog_include=1 and t.visible
+        where e.uid={$uid} and f.threadlog_include=1 and t.visible=1
         ORDER BY e.roworder LIMIT ". $start .", ". $per_page);
 
     // can edit threadlog
@@ -472,6 +496,7 @@ function threadlog() {
         $tids = array_map(function($thread) { return $thread['tid']; }, $threads);
         $participants_by_tid = get_thread_participants($uid, $tids);
 
+        $plugins->run_hooks('threadlog_before_list', $tids);
         // process each threadlog entry
         $entry_count = $per_page * ($page - 1);
         foreach ($threads as $thread) {
@@ -483,6 +508,8 @@ function threadlog() {
             eval("\$threadlog_list .= \"".$templates->get("threadlog_row")."\";");
         }
     }
+    $plugin_templates = [];
+    $plugin_templates = $plugins->run_hooks('threadlog_end', $plugin_templates);
 
     eval("\$threadlog_page = \"".$templates->get("threadlog_page")."\";");
     output_page($threadlog_page);

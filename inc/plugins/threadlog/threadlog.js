@@ -1,7 +1,11 @@
 $(() => {
+    $('#show-all').addClass('active');
+
     $('#threadlog-toggles a').click((e) => {
         e.preventDefault();
         const action = e.target.id;
+        $('#threadlog-toggles a').removeClass('active');
+        $(e.target).addClass('active');
         if (action === 'show-all') {
             $('#threadlog .threadlogrow').show();
             return;

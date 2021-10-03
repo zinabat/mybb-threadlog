@@ -8,7 +8,7 @@ if (!defined("IN_MYBB")) {
 class Threadlog {
     private $uid;
 
-    public function __construct($uid) {
+    public function __construct($uid = null) {
         $this->uid = $uid;
     }
     /**
@@ -20,7 +20,7 @@ class Threadlog {
         global $charset;
         http_response_code($status);
         header("Content-type: application/json; charset={$charset}");
-        echo json_encode($data);
+        output_page(json_encode($data));
         exit;
     }
 
@@ -59,6 +59,26 @@ class Threadlog {
     }
 
     /**
+     * Deletes the threadlog entry if the given pid is the only post by the user in that thread
+     * @param int The post id to check
+     */
+    public function delete_if_only_post($pid) {
+        global $db;
+         // get the post
+        $query = $db->simple_select('posts', 'uid, tid', 'pid='.$pid);
+        $post = $db->fetch_array($query);
+        $db->free_result($query);
+        // get the thread participants
+        $query = $db->write_query("SELECT distinct uid from `{$db->table_prefix}posts`
+            WHERE tid={$post['tid']} AND pid !={$pid}");
+        while ($row = $db->fetch_array($query)) {
+            // if the participant still has posts in the thread, do nothing
+            if ($row['uid'] === $post['uid']) return;
+        }
+        $db->delete_query('threadlogentry', "tid={$post['tid']} AND uid={$post['uid']}");
+    }
+
+    /**
     * Generate an array of template values from a given threadlog entry
     * @param array $thread Result row from database of a threadlog entry with thread details
     * @param int $entry_count This entry "number", for calculating even or odd row classes
@@ -67,7 +87,7 @@ class Threadlog {
     * @return array Keyed array of values
     */
     public static function row_template_values($thread, $entry_count, $participants_by_tid = null, $count_total) {
-        global $mybb, $db, $templates;
+        global $mybb, $db, $templates, $plugins;
         $return_values = [];
         $return_values['uid'] = $uid = $thread['uid'];
         $return_values['tid'] = $tid = $thread['tid'];
@@ -146,6 +166,8 @@ class Threadlog {
             $return_values['thread_actions'] = $thread_actions;
             eval('$return_values[\'thread_actions_cell\'] = "'.$templates->get('threadlog_row_actions').'";');
         }
+        // create hook for other plugins to add stuff to the template
+        $return_values = $plugins->run_hooks('threadlog_row_template', $return_values);
         return $return_values;
     }
 
