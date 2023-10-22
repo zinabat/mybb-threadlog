@@ -1,33 +1,27 @@
-/* authored by Autumn Welles <http://autumnwelles.com/> */
-jQuery(document).ready(function ($) {
+$(() => {
+    $('#show-all').addClass('active');
 
-	$('#active').on('click', function(e) {
-		e.preventDefault();
-		$('#threadlog tbody tr').hide();
-		$('#threadlog tbody .active').show();
-	});
+    $('#threadlog-toggles a').click((e) => {
+        e.preventDefault();
+        const action = e.target.id;
+        $('#threadlog-toggles a').removeClass('active');
+        $(e.target).addClass('active');
+        if (action === 'show-all') {
+            $('#threadlog .threadlogrow').show();
+            return;
+        }
 
-	$('#closed').on('click', function(e) {
-		e.preventDefault();
-		$('#threadlog tbody tr').hide();
-		$('#threadlog tbody .closed').show();
-	});
-
-	$('#need-replies').on('click', function(e) {
-		e.preventDefault();
-		$('#threadlog tbody tr').hide();
-		$('#threadlog .needs-reply').show();
-	});
-
-	$('#closed').on('click', function(e) {
-		e.preventDefault();
-		$('#threadlog tbody tr').hide();
-		$('#threadlog tbody .closed').show();
-	});
-
-	$('#show-all').on('click', function(e) {
-		e.preventDefault();
-		$('#threadlog tbody tr').show();
-	});
-
+        $('#threadlog .threadlogrow').hide();
+        switch (action) {
+            case 'active':
+                $('#threadlog .active').show();
+                break;
+            case 'closed':
+                $('#threadlog .closed').show();
+                break;
+            case 'need-replies':
+                $('#threadlog .needs-reply').show();
+                break;
+        }
+    });
 });
