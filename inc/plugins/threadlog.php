@@ -48,7 +48,9 @@ function threadlog_generate_entries()
             'roworder' => $order++
         ];
     }
-    $db->insert_query_multiple('threadlogentry', $queries);
+    if (count($queries)) {
+        $db->insert_query_multiple('threadlogentry', $queries);
+    }
 }
 
 function threadlog_install()
